@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Scene</title>
+  <script type="module" src="./libs/babylon.js"></script>
+  <script type="module" src="./libs/babylonjs.loaders.min.js"></script>
+  <script type="module" src="./libs/oimo.js"></script>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+
+<body>
+  <nav class="menu">
+    <button class="menu_btn"><span></span><span></span><span></span></button>
+    <div class="menu_body active">
+      <div class="menu_body_part">
+        <button class="menu_body_part_ctrl">Main axis control</button>
+        <div class="menu_body_part_body">
+          <label class="label">
+            <div class="title axis">
+              <span class="x_color">X - <input type="checkbox" checked class="ctrlX"></span>
+              <span class="y_color">Y - <input type="checkbox" checked class="ctrlY"></span>
+              <span class="z_color">Z - <input type="checkbox" checked class="ctrlZ"></span>
+            </div>
+          </label>
+          <label class="label">
+            <div class="title">Axis cone top</div><input type="number" class="ctrlTop">
+          </label>
+          <label class="label">
+            <div class="title">Axis cone bottom</div><input type="number" class="ctrlBottom">
+          </label>
+          <label class="label">
+            <div class="title">Axis cone height</div><input type="number" class="ctrlHeight">
+          </label>
+          <label class="label">
+            <div class="title">Axis length</div><input type="number" class="ctrlLength">
+          </label>
+        </div>
+      </div>
+      <div class="menu_body_part">
+        <button class="menu_body_part_ctrl">CamPath axis control</button>
+        <div class="menu_body_part_body">
+          <label class="label">
+            <div class="title axis">
+              <span class="x_color">X - <input type="checkbox" checked class="camPathctrlX"></span>
+              <span class="y_color">Y - <input type="checkbox" checked class="camPathctrlY"></span>
+              <span class="z_color">Z - <input type="checkbox" checked class="camPathctrlZ"></span>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="menu_body_part">
+        <div class="points_btns">
+          <button class="add_point">Add point</button>
+          <button class="toggle_points">Toggle points</button>
+          <button class="delete_point">Delete point</button>
+        </div>
+        <div class="point_coords">
+          <div class="current_point"></div>
+          <div class="point_coord"><span class="x_color">X - </span> <input type="number" class="point_coord_x"></div>
+          <div class="point_coord"><span class="y_color">Y - </span> <input type="number" class="point_coord_y"></div>
+          <div class="point_coord"><span class="z_color">Z - </span> <input type="number" class="point_coord_z"></div>
+        </div>
+      </div>
+      <div class="menu_body_part">
+        <div>
+          <button class="toggle_catmull">Toggle Catmull</button>
+        </div>
+        <label><span class="catmull_title">Catmull points</span> <input type="number" class="catmull_points"></label>
+      </div>
+      <div class="menu_body_part btns">
+        <button class="getData btn"><a download="data.js">Get Data</a></button>
+        <button class="pathLook btn">Path look</button>
+      </div>
+    </div>
+  </nav>
+
+  <canvas id="canvas"></canvas>
+
+  <div class="scissors"></div>
+
+  <script src="./js/nav.js"></script>
+
+  <script type="module">
+    import { Аxes } from "./js/Аxes.js";
+    import { PointsCtrl } from "./js/PointsCtrl.js";
+    import { CatmullHelper } from "./js/CatmullHelper.js";
+    import { PathCamera } from "./js/PathCamera.js";
+
+    const canvas = document.querySelector("#canvas");
+    const engine = new BABYLON.Engine(canvas, true);
+
+    const {
+      scene,
+      camera
+    } = createScene(engine, canvas);
+
+    const axes = new Аxes(scene, { top: 0.5, bottom: 10, height: 30, length: 300 });
+    axes.addControls({ ctrlX: ".ctrlX", ctrlY: ".ctrlY", ctrlZ: ".ctrlZ", ctrlTop: ".ctrlTop", ctrlBottom: ".ctrlBottom", ctrlHeight: ".ctrlHeight", ctrlLength: ".ctrlLength" });
+
+    const pointsCtrl = new PointsCtrl({
+      scene: scene,
+      addBtn: ".add_point",
+      toggleBtn: ".toggle_points",
+      deleteBtn: ".delete_point",
+      classCtrl: ".point_coords",
+      currentPointName: ".current_point",
+      classX: ".point_coord_x",
+      classY: ".point_coord_y",
+      classZ: ".point_coord_z",
+    });
+
+    const catmullHelper = new CatmullHelper(scene, { ctrl: ".catmull_points", toggleCtrl: ".toggle_catmull", pointsCtrl: pointsCtrl });
+
+    const pathCamera = new PathCamera(scene, { pathLookCtrl: ".pathLook", scissors: ".scissors" });
+    pathCamera.setFirstState({ position: catmullHelper.cameraPath.positions[0], rotation: catmullHelper.cameraPath.rotations[0]});
+    const axesPathCamera = new Аxes(scene, { top: 0.1, bottom: 3, height: 8, length: 20 });
+    axesPathCamera.addControls({ ctrlX: ".camPathctrlX", ctrlY: ".camPathctrlY", ctrlZ: ".camPathctrlZ" });
+    axesPathCamera.setParent(pathCamera.pathCam);
+
+    let pagesPoints;
+    let pagesMeshes = [];
+
+    catmullHelper.callbacks.push(() => {
+      pathCamera.setPath({ positions: catmullHelper.cameraPath.positions, rotations: catmullHelper.cameraPath.rotations });
+      pagesPoints = pathCamera.getPagesPoint(catmullHelper.cameraPath.pagesPoints);
+      pagesMeshes.map(mesh => mesh.dispose());
+      pagesMeshes = drawPages(pagesPoints, scene);
+    });
+
+    const getDataBtn = document.querySelector(".getData");
+    const getDataLink = document.querySelector(".getData a");
+    getDataBtn.addEventListener("click", () => {
+      getData({ positions: catmullHelper.cameraPath.positions, rotations: catmullHelper.cameraPath.rotations, pagesOptions: pagesPoints, linesPoints: pathCamera.linesPoints });
+    });
+
+    engine.runRenderLoop(function () {
+      scene.render();
+    });
+
+    window.addEventListener("resize", () => {
+      engine.resize();
+    });
+
+    function createScene(engine, canvas) {
+      const scene = new BABYLON.Scene(engine);
+
+      const camera = new BABYLON.UniversalCamera("UniversalCamera", new BABYLON.Vector3(0, 0, -500), scene);
+      scene.cameraToUseForPointers = camera;
+      camera.setTarget(BABYLON.Vector3.Zero());
+      camera.attachControl(canvas);
+      camera.keysUp = [87];
+      camera.keysDown = [83];
+      camera.keysLeft = [65];
+      camera.keysRight = [68];
+      camera.speed = 5;
+      scene.activeCameras.push(camera);
+
+      const hemiLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, -1, 0));
+
+      return {
+        scene,
+        camera
+      };
+    }
+
+    function drawPages(pagesPoints, scene) {
+      const faceColors = [
+        new BABYLON.Color4(1, 0, 1, 1),
+        new BABYLON.Color4(1, 0, 1, 1),
+        new BABYLON.Color4(1, 0, 1, 1),
+        new BABYLON.Color4(1, 1, 0, 1),
+        new BABYLON.Color4(1, 0, 1, 1),
+        new BABYLON.Color4(1, 0, 1, 1),
+      ];
+      const box = BABYLON.MeshBuilder.CreateBox("box", { width: 1, height: 10, depth: 10, faceColors: faceColors }, scene);
+      const pagesMeshes = pagesPoints.map((pagePoint, index) => {
+        const newInstance = box.clone("box-" + index);
+        newInstance.position = pagePoint.position;
+        newInstance.rotationQuaternion = pagePoint.rotationQuaternion;
+
+        return newInstance;
+      });
+      box.dispose();
+      return pagesMeshes;
+    }
+  
+    function getData({ positions, rotations, pagesOptions, linesPoints }) {
+      if (!positions || !rotations || !pagesOptions || !linesPoints) return;
+      const posObj = positions.map(pos => {
+        return {
+          x: pos.x,
+          y: pos.y,
+          z: pos.z,
+        };
+      });
+      const rotObj = rotations.map(rot => {
+        return {
+          x: rot.x,
+          y: rot.y,
+          z: rot.z,
+          w: rot.w,
+        };
+      });
+      const pageObj = pagesOptions.map(pageOption => {
+        return {
+          point: pageOption.point,
+          position: {
+            x: pageOption.position.x,
+            y: pageOption.position.y,
+            z: pageOption.position.z,
+          },
+          rotation: {
+            x: pageOption.rotationQuaternion.x,
+            y: pageOption.rotationQuaternion.y,
+            z: pageOption.rotationQuaternion.z,
+            w: pageOption.rotationQuaternion.w,
+          }
+        };
+      });
+      const data = {
+        cameraPosition: linesPoints[0],
+        cameraTarget: linesPoints[1],
+        positions: posObj,
+        rotations: rotObj,
+        pagesOptions: pageObj,
+      };
+      let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent("export default " + JSON.stringify(data));
+      getDataLink.setAttribute("href", dataStr);
+      getDataLink.click();
+    }
+  </script>
+</body>
+
+</html>

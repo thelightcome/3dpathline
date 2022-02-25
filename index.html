@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Scene</title>
+  <script type="module" src="./libs/babylon.js"></script>
+  <style>
+    html,
+    body {
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    #canvas {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import dataJSON from './data.js';
+    const newDataJSON = convertDataJSON(dataJSON);
+    const canvas = document.querySelector("#canvas");
+    const engine = new BABYLON.Engine(canvas, true);
+
+    const {
+      scene,
+      camera
+    } = createScene(engine, canvas, newDataJSON);
+
+    // const ribbonData = newDataJSON.positions.filter((pos, index) => index % 5 === 0);
+    const ribbonData = newDataJSON.positions;
+    const ribbon = createRibbon(ribbonData, 1, scene);
+    const sun = createSun(scene, camera);
+    const pagesMeshes = createPages(newDataJSON.pagesOptions);
+
+    engine.runRenderLoop(function () {
+      scene.render();
+    });
+
+    window.addEventListener("resize", () => {
+      engine.resize();
+    });
+
+    function convertDataJSON(dataJSON) {
+      return {
+        cameraPosition: new BABYLON.Vector3(dataJSON.cameraPosition._x, dataJSON.cameraPosition._y, dataJSON.cameraPosition._z),
+        cameraTarget: new BABYLON.Vector3(dataJSON.cameraTarget._x, dataJSON.cameraTarget._y, dataJSON.cameraTarget._z),
+        positions: dataJSON.positions.map(pos => new BABYLON.Vector3(pos.x, pos.y, pos.z)),
+        rotations: dataJSON.rotations.map(rot => new BABYLON.Quaternion(rot.x, rot.y, rot.z, rot.w)),
+        pagesOptions: dataJSON.pagesOptions.map(pageOption => {
+          return {
+            point: pageOption.point,
+            position: new BABYLON.Vector3(pageOption.position.x, pageOption.position.y, pageOption.position.z),
+            rotation: new BABYLON.Quaternion(pageOption.rotation.x, pageOption.rotation.y, pageOption.rotation.z, pageOption.rotation.w),
+          };
+        }),
+      };
+    }
+
+    function createScene(engine, canvas, option) {
+      const scene = new BABYLON.Scene(engine);
+      scene.clearColor = BABYLON.Color3.FromHexString("#020202");
+
+      // const photoDome = new BABYLON.PhotoDome("photoDome", "./assets/images/nebula.jpg", { resolution: 128, size: 10000 }, scene);
+
+      const glow = new BABYLON.GlowLayer("glow", scene);
+      glow.intensity = 5;
+
+      const camBoxMat = new BABYLON.StandardMaterial("camBoxMat", scene);
+      camBoxMat.alpha = 0;
+
+      const camBox = BABYLON.MeshBuilder.CreateBox("camBox", {}, scene);
+      camBox.material = camBoxMat;
+      camBox.position = option.positions[0];
+      camBox.rotationQuaternion = option.rotations[0];
+
+      const camera = new BABYLON.UniversalCamera("camera", option.cameraPosition);
+      camera.parent = camBox;
+      camera.setTarget(option.cameraTarget);
+      camera.attachControl(canvas);
+      camera.speed = 0;
+      camera.keysUp = [87];
+      camera.keysDown = [83];
+      camera.keysLeft = [65];
+      camera.keysRight = [68];
+
+      let scrolled = false;
+      let dir = 1;
+      let page = 0;
+      let maxPage = option.pagesOptions.length;
+      let curPoint = 0;
+      let targetPoint = 0;
+      let speed = 2;
+
+      let curRot = new BABYLON.Vector3(0, 1.5708213267948914, 0);
+      let targetRot = new BABYLON.Vector3(0, 1.5708213267948914, 0);
+      let p = 0;
+      let sp = 0.01;
+
+      window.addEventListener("wheel", (e) => {
+        if (scrolled) return;
+        scrolled = true;
+        dir = Math.sign(e.deltaY);
+        page += dir;
+        if (page < 0 || page >= maxPage) page = 0;
+        targetPoint = option.pagesOptions[page].point;
+        curRot = camera.rotation;
+        p = 0;
+      });
+
+      scene.registerBeforeRender(function() {
+        if (curPoint - speed > targetPoint || curPoint + speed < targetPoint) {
+          if (curPoint + dir < 0) return;
+          curPoint = (curPoint + dir) % option.positions.length;
+          camBox.position = option.positions[curPoint];
+          camBox.rotationQuaternion = option.rotations[curPoint];
+          p += sp;
+          if (p > 1) p = 1;
+          const tv = BABYLON.Vector3.Lerp(curRot, targetRot, p);
+          camera.rotation = tv;
+        } else if (scrolled) {
+          scrolled = false;
+        }
+      });
+
+      const hemiLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, -1, 0));
+
+      return {
+        scene,
+        camera
+      };
+    }
+
+    function createRibbon(positions, thickness = 5, scene) {
+      function getRibbonData(positions) {
+        return positions.map((position, index) => {
+          let shiftX = Math.cos(index * Math.PI / 100) * thickness;
+          let shiftZ = Math.sin(index * Math.PI / 100) * thickness;
+          return [
+            new BABYLON.Vector3(position.x - shiftX, position.y - 4, position.z - shiftZ),
+            new BABYLON.Vector3(position.x + shiftX, position.y - 4, position.z + shiftZ)
+          ];
+        });
+      }
+      
+      let ribbonMat = new BABYLON.StandardMaterial("ribbonMat", scene);
+      let ribbonTexture = new BABYLON.Texture("./assets/images/ribbon-color.jpg", scene);
+      ribbonMat.diffuseTexture = ribbonTexture;
+      ribbonMat.specularTexture = ribbonTexture;
+      ribbonMat.emissiveTexture = ribbonTexture;
+      let ribbon = BABYLON.MeshBuilder.CreateRibbon("ribbon", { 
+        pathArray: getRibbonData(positions),
+        closeArray: true,
+        sideOrientation: BABYLON.Mesh.DOUBLESIDE
+      }, scene);
+      ribbon.material = ribbonMat;
+
+      scene.registerBeforeRender(() => {
+        ribbonTexture.uOffset += 0.001;
+        ribbonTexture.vOffset -= 0.01;
+      });
+
+      return ribbon;
+    }
+
+    function createSun(scene) {
+      const sunSphereTexture = new BABYLON.Texture("./assets/images/ribbon-color.jpg", scene);
+
+      const sunSphereMat = new BABYLON.StandardMaterial("sunSphereMat", scene);
+      sunSphereMat.emissiveTexture = sunSphereTexture;
+
+      const sunSphere = BABYLON.MeshBuilder.CreateSphere("sphere", { diameter: 70 }, scene);
+      sunSphere.material = sunSphereMat;
+
+      const sunLight = new BABYLON.PointLight("sunLight", new BABYLON.Vector3(0, 0, 0), scene);
+      sunLight.intensity = 1;
+
+      const vls = new BABYLON.VolumetricLightScatteringPostProcess('vls', 1.0, camera, sunSphere, 13, BABYLON.Texture.BILINEAR_SAMPLINGMODE, scene.getEngine(), false, scene);
+      vls.exposure = 0.2;
+      vls.decay = 0.96815;
+      vls.weight = 0.58767;
+      vls.density = 0.926;
+
+      scene.registerBeforeRender(() => {
+        sunSphereTexture.uOffset += 0.001;
+      });
+
+      return sunSphere;
+    }
+
+    function createPages(pagesOptions) {
+      const page = BABYLON.MeshBuilder.CreateBox("page", {}, scene);
+      const pageMat = new BABYLON.StandardMaterial("pageMat");
+      // pageMat.alpha = 0;
+      page.material = pageMat;
+      const pagesMeshes = pagesOptions.map((pagesOption, index) => {
+        const clone = page.clone("page-" + index);
+        clone.position = pagesOption.position;
+        clone.rotationQuaternion = pagesOption.rotation;
+
+        return clone;
+      });
+      page.dispose();
+      return pagesMeshes;
+    }
+  </script>
+</body>
+
+</html>
